@@ -77,6 +77,15 @@
   var statTop = stat('TOP IMPLIED VALUE', fmtUsd(D.rows.length ? D.rows[0].implied_value_usd : 0), '', 'value');
   stats.append(statWatch, statBoard, statEarly, statLive, statTop);
 
+  var strip = el('section', 'strip');
+  var stripHead = el('div', 'strip-head');
+  stripHead.append(el('span', 'strip-title', 'VALUE MAP'), el('span', 'strip-note', 'every dot is a pre-token protocol: TVL across, implied launch value up, both logarithmic; colour is risk, size is seven-day growth'));
+  var mapSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  mapSvg.setAttribute('class', 'map');
+  mapSvg.setAttribute('viewBox', '0 0 1200 108');
+  mapSvg.setAttribute('preserveAspectRatio', 'none');
+  strip.append(stripHead, mapSvg);
+
   var bar = el('section', 'toolbar');
   var tabs = el('div', 'tabs');
   var tabBoard = el('button', 'tab on', 'PRE-TOKEN BOARD');
@@ -157,7 +166,7 @@
   var footR = el('div', 'right', D.source + ' · ' + D.board_size + ' rows · model ' + D.model_version);
   foot.append(footL, footR);
 
-  app.append(head, stats, bar, main, foot);
+  app.append(head, stats, strip, bar, main, foot);
 
   // ── filtering and sorting ─────────────────────────────────────────────────
   function rowsFor() {
@@ -188,6 +197,57 @@
       return a.rank - b.rank;
     });
     return list;
+  }
+
+  function drawMap(list) {
+    var W = 1200, H = 108, pad = 6;
+    mapSvg.textContent = '';
+    if (!list.length) return;
+    var xs = list.map(function (r) { return Math.log10(Math.max(r.tvl_usd, 1e5)); });
+    var ys = list.map(function (r) { return Math.log10(Math.max(r.implied_value_usd, 1)); });
+    var x0 = Math.min.apply(null, xs) - 0.1, x1 = Math.max.apply(null, xs) + 0.1;
+    var y0 = Math.min.apply(null, ys) - 0.1, y1 = Math.max.apply(null, ys) + 0.1;
+    var sx = function (v) { return pad + (v - x0) / (x1 - x0) * (W - pad * 2); };
+    var sy = function (v) { return H - pad - (v - y0) / (y1 - y0) * (H - pad * 2); };
+    var ns = 'http://www.w3.org/2000/svg';
+    for (var g = 0; g <= 4; g += 1) {
+      var line = document.createElementNS(ns, 'line');
+      var gy = pad + g * (H - pad * 2) / 4;
+      line.setAttribute('x1', pad); line.setAttribute('x2', W - pad);
+      line.setAttribute('y1', gy.toFixed(1)); line.setAttribute('y2', gy.toFixed(1));
+      line.setAttribute('stroke', '#16202c'); line.setAttribute('stroke-width', '1');
+      mapSvg.append(line);
+    }
+    function money(v) {
+      if (v >= 1e9) return '$' + (v / 1e9).toFixed(0) + 'B';
+      if (v >= 1e6) return '$' + (v / 1e6).toFixed(0) + 'M';
+      if (v >= 1e3) return '$' + Math.round(v / 1e3) + 'K';
+      return '$' + v;
+    }
+    function tick(value, x, y, anchor) {
+      var t = document.createElementNS(ns, 'text');
+      t.setAttribute('x', x.toFixed(1));
+      t.setAttribute('y', y.toFixed(1));
+      t.setAttribute('fill', '#5d7186');
+      t.setAttribute('font-size', '8');
+      t.setAttribute('font-family', 'ui-monospace, monospace');
+      t.setAttribute('text-anchor', anchor);
+      t.textContent = money(value);
+      mapSvg.append(t);
+    }
+    for (var e = Math.ceil(x0); e <= Math.floor(x1); e += 1) tick(Math.pow(10, e), sx(e), H - 2, 'middle');
+    for (var f = Math.ceil(y0); f <= Math.floor(y1); f += 1) tick(Math.pow(10, f), 2, sy(f) + 3, 'start');
+    var colors = { low: '#2fd4b4', medium: '#ffb347', high: '#ff5d6c' };
+    list.slice().sort(function (a, b) { return b.implied_value_usd - a.implied_value_usd; }).forEach(function (r, i) {
+      var c = document.createElementNS(ns, 'circle');
+      var g = r.change_7d === null ? 0 : Math.max(-1, Math.min(1, r.change_7d / 40));
+      c.setAttribute('cx', sx(Math.log10(Math.max(r.tvl_usd, 1e5))).toFixed(1));
+      c.setAttribute('cy', sy(Math.log10(Math.max(r.implied_value_usd, 1))).toFixed(1));
+      c.setAttribute('r', (2.2 + Math.abs(g) * 2.6).toFixed(1));
+      c.setAttribute('fill', colors[r.risk] || '#8ba0b8');
+      c.setAttribute('opacity', i < 12 ? '1' : '0.55');
+      mapSvg.append(c);
+    });
   }
 
   function renderBoard() {
@@ -236,6 +296,7 @@
       tbody.append(tr);
     });
     countLine.textContent = list.length + ' of ' + D.rows.length + ' rows';
+    drawMap(list);
   }
 
   function renderLive() {
